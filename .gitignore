@@ -1,0 +1,22 @@
+# Arduino / ESP32 build products
+build/
+*.bin
+*.elf
+*.hex
+*.map
+*.partitions.bin
+
+# IDE and operating-system files
+.vscode/
+.idea/
+.DS_Store
+Thumbs.db
+desktop.ini
+~$*
+
+# Local archives and obsolete working backups
+*_backup.*
+*.zip
+
+# Large raw experiment traces are backed up separately
+calibration_data/raw/
