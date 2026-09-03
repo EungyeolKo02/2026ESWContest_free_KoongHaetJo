@@ -166,7 +166,7 @@ DS3231은 I2C 주소 `0x68`을 사용합니다. 주소 충돌을 피하려면 MP
 
 ## 대회 제출 링크
 
-- 소스코드: [github.com/EungyeolKo02/2026ESWContest_free_쿵했조](https://github.com/EungyeolKo02/2026ESWContest_free_쿵했조)
+- 소스코드: [github.com/EungyeolKo02/2026ESWContest_free_KoongHaetJo](https://github.com/EungyeolKo02/2026ESWContest_free_KoongHaetJo) (팀명: 쿵했조)
 - 시연 영상: 제작 및 업로드 후 추가 예정
 
 위 링크는 개발완료보고서와 작품소개서에도 동일하게 반영합니다.
