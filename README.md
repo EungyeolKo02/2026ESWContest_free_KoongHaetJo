@@ -16,10 +16,11 @@ EV-BLACKBOX는 차량 하부 모형에 부착한 PZT 센서 4개와 MPU6050의 �
 | 기본 코드 구동 | 확인 완료 | 부팅 및 주요 기능 동작 확인 |
 | microSD 요약 로그 생성 | 확인 완료 | 카드에 로그 파일 생성 확인 |
 | PZT 4채널 실제 위치 매핑 | 진행 예정 | FL/FR/RL/RR 배선과 물리 위치 대조 필요 |
-| 파일럿 45회 실험 | 진행 예정 | 조건·신호 품질·임계값 점검 |
-| 본 실험 270회 | 진행 예정 | 파일럿 통과 및 펌웨어 동결 후 수행 |
+| 1차 파일럿 36회 | 완료 | 점수 쏠림과 PZT 포화 현상 확인 |
+| 아날로그 회로 개선 및 재검증 | 진행 예정 | 포화 제거 후 임계값·채널 보정값 재조정 |
+| 본 실험 270회 | 진행 예정 | 재검증 통과 및 펌웨어 동결 후 수행 |
 
-현재 공개 버전은 `v0.4.0`입니다. 실험 완료 전의 판정 임계값은 가설값이며, 실제 데이터로 보정해야 합니다.
+현재 공개 버전은 `v0.4.1`입니다. 판정 임계값은 1차 파일럿 결과를 반영한 임시값이며, 아날로그 회로 개선 후 다시 검증해야 합니다.
 
 ## 주요 기능
 
@@ -54,6 +55,8 @@ EV-BLACKBOX는 차량 하부 모형에 부착한 PZT 센서 4개와 MPU6050의 �
 
 ```text
 EV_BlackBox_Firmware/
+├─ .gitattributes             # 운영체제별 줄바꿈 형식 통일
+├─ .gitignore                 # 빌드·백업·실험 원본 제외 규칙
 ├─ EV_BlackBox_Firmware.ino   # ESP32 메인 펌웨어
 ├─ README.md                  # 프로젝트 및 실행 방법
 ├─ CHANGELOG.md               # 버전별 주요 변경사항
@@ -68,18 +71,22 @@ EV_BlackBox_Firmware/
 ## 개발 환경과 라이브러리
 
 - 보드: ESP32 DevKit V1 / Arduino IDE의 `ESP32 Dev Module`
-- ESP32 Arduino Core: `3.3.11` 기준
 - 시리얼 속도: `115200 baud`
-- 주요 라이브러리
-  - Adafruit MPU6050
-  - Adafruit SSD1306
-  - Adafruit GFX Library
-  - Adafruit Unified Sensor
-  - RTClib
-  - 위 라이브러리의 의존성(Adafruit BusIO 등)
 - 보드 패키지 내장 라이브러리: Wire, SPI, SD
 
-공개 제출본에서는 최종 실험에 사용한 라이브러리 버전과 컴파일 결과를 다시 기록할 예정입니다.
+| 구성요소 | 검증 버전 |
+|---|---:|
+| ESP32 Arduino Core | `3.3.11` |
+| Adafruit MPU6050 | `2.2.9` |
+| Adafruit SSD1306 | `2.5.17` |
+| Adafruit GFX Library | `1.12.6` |
+| Adafruit Unified Sensor | `1.1.15` |
+| Adafruit BusIO | `1.17.4` |
+| RTClib | `2.1.4` |
+
+최종 실험에서는 위 버전을 고정하고 컴파일 결과를 다시 확인합니다.
+
+2026-09-03 `ESP32 Dev Module` 대상으로 컴파일을 확인했습니다. 프로그램 저장공간은 441,110 bytes(33%), 동적 메모리는 66,360 bytes(20%)를 사용합니다.
 
 ## 빌드 및 업로드
 
@@ -100,6 +107,7 @@ EV_BlackBox_Firmware/
 |---|---|
 | `h` | 도움말 출력 |
 | `s` | 장치 상태와 현재 센서값 출력 |
+| `d` | RTC 재연결을 시도하고 현재 날짜·시간 출력 |
 | `c` | PZT 재보정 후 채널 응답 자가시험 |
 | `v` | PZT 채널 응답 자가시험만 다시 실행 |
 | `t` | 모의 `INSPECT` 이벤트 생성 |
@@ -141,11 +149,12 @@ DS3231은 I2C 주소 `0x68`을 사용합니다. 주소 충돌을 피하려면 MP
 
 - 충격 트리거: `baseline + max(120, noise × 8)`
 - IMU 확인 기준: 기준 중력 대비 `0.20 g`
-- 점수 정규화: PZT `3000 counts`, IMU `4.0 g`
-- 점검 권고 점수: `0.25`
-- 우선 점검 점수: `0.60`
+- 점수 정규화: PZT `4095 counts`, IMU `10.0 g`
+- 점검 권고 점수: `0.55`
+- 우선 점검 점수: `0.80`
+- PZT 포화 이벤트: 충격은 기록하고 우선 점검으로 표시하되 위치는 `UNKNOWN`
 
-이 값은 안전 판정 기준이 아니라 실험을 시작하기 위한 초기값입니다. 파일럿 실험에서 포화율, 미검출·오검출, 위치 오차와 반복성을 확인한 뒤 값과 센서별 `PZT_GAIN`을 고정해야 합니다. 전체 절차는 [docs/TEST_PLAN.md](docs/TEST_PLAN.md)를 참고합니다.
+이 값은 안전 판정 기준이 아니라 2026-08-30 파일럿 36회의 점수 쏠림을 줄이기 위한 임시 보정값입니다. 아날로그 포화를 먼저 제거하고 새 파일럿에서 포화율, 미검출·오검출, 위치 오차와 반복성을 확인한 뒤 값과 센서별 `PZT_GAIN`을 고정해야 합니다. 전체 절차는 [docs/TEST_PLAN.md](docs/TEST_PLAN.md)를 참고합니다.
 
 ## 한계와 안전 고지
 
@@ -157,7 +166,7 @@ DS3231은 I2C 주소 `0x68`을 사용합니다. 주소 충돌을 피하려면 MP
 
 ## 대회 제출 링크
 
-- 소스코드: [github.com/EungyeolKo02/2026ESWContest_free_KoongHaetJo](https://github.com/EungyeolKo02/2026ESWContest_free_KoongHaetJo)
+- 소스코드: [github.com/EungyeolKo02/2026ESWContest_free_쿵했조](https://github.com/EungyeolKo02/2026ESWContest_free_쿵했조)
 - 시연 영상: 제작 및 업로드 후 추가 예정
 
 위 링크는 개발완료보고서와 작품소개서에도 동일하게 반영합니다.

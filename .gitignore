@@ -6,6 +6,11 @@ build/
 *.map
 *.partitions.bin
 
+# PlatformIO build products
+.pio/
+.pioenvs/
+.piolibdeps/
+
 # IDE and operating-system files
 .vscode/
 .idea/
@@ -17,6 +22,9 @@ desktop.ini
 # Local archives and obsolete working backups
 *_backup.*
 *.zip
+*.bak
+*.tmp
+*.log
 
 # Large raw experiment traces are backed up separately
 calibration_data/raw/

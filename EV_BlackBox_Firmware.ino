@@ -42,7 +42,7 @@ namespace Config {
 // 펌웨어 및 하드웨어 설정
 // ---------------------------------------------------------------------------
 
-constexpr char FIRMWARE_VERSION[] = "0.4.0";
+constexpr char FIRMWARE_VERSION[] = "0.4.1";
 constexpr uint32_t SERIAL_BAUD = 115200;
 
 constexpr size_t PZT_COUNT = 4;
@@ -170,11 +170,14 @@ constexpr float LOCATION_DEADBAND_RATIO = 0.50f;
 constexpr float CENTER_MIN = 0.40f;
 constexpr float CENTER_MAX = 0.60f;
 
-// 상대 충격수준 정규화 기준입니다. 실제 낙하실험 후 수정해야 합니다.
-constexpr float PZT_NORMALIZATION_COUNTS = 3000.0f;
-constexpr float IMU_NORMALIZATION_DELTA_G = 4.0f;
-constexpr float INSPECTION_RECOMMENDED_SCORE = 0.25f;
-constexpr float PRIORITY_INSPECTION_SCORE = 0.60f;
+// 2026-08-30 파일럿 36회에서 이전 3000 counts / 4 g 기준은 대부분의
+// 사건을 점수 상한과 PRIORITY로 몰았습니다. ADC 전체 범위와 파일럿의
+// 비포화 IMU 범위에 맞춘 임시 보정값이며, 아날로그 포화 제거 후 다시
+// 검증하고 본 실험 전에 동결해야 합니다.
+constexpr float PZT_NORMALIZATION_COUNTS = 4095.0f;
+constexpr float IMU_NORMALIZATION_DELTA_G = 10.0f;
+constexpr float INSPECTION_RECOMMENDED_SCORE = 0.55f;
+constexpr float PRIORITY_INSPECTION_SCORE = 0.80f;
 
 constexpr float STANDARD_GRAVITY = 9.80665f;
 
@@ -412,6 +415,8 @@ void initializeAdc();
 void initializeI2cDevices();
 bool initializeMpuDevice();
 bool initializeRtc();
+bool isRtcDateTimeValid(const DateTime &dateTime);
+void printRtcStatus();
 void captureEventTimestamp(ImpactEvent &event);
 bool readMpuRegister8(uint8_t registerAddress, uint8_t &value);
 bool readMpuAcceleration(
@@ -752,15 +757,6 @@ bool initializeRtc() {
     return false;
   }
 
-  // 정상 구성은 MPU6050 0x69 + DS3231 0x68입니다. MPU가 연결되지 않은
-  // 상태에서는 0x68 장치 오인 가능성을 피하기 위해 RTC를 활성화하지 않습니다.
-  if (!imuReady || mpuAddress != Config::MPU_ADDRESS_PRIMARY) {
-    setErrorFlag(ERROR_RTC, true);
-    Serial.println(
-        "[WARN] RTC not initialized: verify MPU6050 at 0x69 first");
-    return false;
-  }
-
   if (!rtc.begin(&Wire)) {
     setErrorFlag(ERROR_RTC, true);
     Serial.println("[WARN] DS3231 not found; uptime-only logging enabled");
@@ -770,7 +766,7 @@ bool initializeRtc() {
   rtcReady = true;
   bool adjustedFromBuild = rtc.lostPower();
   DateTime now = rtc.now();
-  if (now.year() < 2024 || now.year() > 2099) {
+  if (!isRtcDateTimeValid(now)) {
     adjustedFromBuild = true;
   }
 
@@ -788,6 +784,48 @@ bool initializeRtc() {
   return true;
 }
 
+bool isRtcDateTimeValid(const DateTime &dateTime) {
+  return dateTime.isValid() &&
+      dateTime.year() >= 2024 &&
+      dateTime.year() <= 2099;
+}
+
+void printRtcStatus() {
+  if (!rtcReady) {
+    Serial.println("[RTC] Not ready; retrying initialization");
+    if (!initializeRtc()) {
+      Serial.println(
+          "[RTC] Unavailable. Check SDA/SCL and keep MPU6050 at 0x69.");
+      return;
+    }
+  }
+
+  const DateTime now = rtc.now();
+  if (!isRtcDateTimeValid(now)) {
+    setErrorFlag(ERROR_RTC, true);
+    rtcReady = false;
+    currentTimeSource = TimeSource::UPTIME_ONLY;
+    Serial.println("[RTC] Invalid date/time received; RTC marked unavailable");
+    return;
+  }
+
+  char timestamp[26];
+  snprintf(
+      timestamp,
+      sizeof(timestamp),
+      "%04u-%02u-%02u %02u:%02u:%02u",
+      static_cast<unsigned>(now.year()),
+      static_cast<unsigned>(now.month()),
+      static_cast<unsigned>(now.day()),
+      static_cast<unsigned>(now.hour()),
+      static_cast<unsigned>(now.minute()),
+      static_cast<unsigned>(now.second()));
+  Serial.printf(
+      "[RTC] %s source=%s\n",
+      timestamp,
+      timeSourceName(currentTimeSource));
+}
+
 void captureEventTimestamp(ImpactEvent &event) {
   event.rtcValid = false;
   event.timeSource = TimeSource::UPTIME_ONLY;
@@ -797,7 +835,7 @@ void captureEventTimestamp(ImpactEvent &event) {
   }
 
   const DateTime now = rtc.now();
-  if (now.year() < 2024 || now.year() > 2099) {
+  if (!isRtcDateTimeValid(now)) {
     setErrorFlag(ERROR_RTC, true);
     rtcReady = false;
     currentTimeSource = TimeSource::UPTIME_ONLY;
@@ -2052,6 +2090,15 @@ void calculateEvent(ImpactEvent &event) {
       (pztConfirmed || imuConfirmed || event.testEvent);
 
   calculateLocation(event);
+
+  // ADC에서 잘린 채널끼리는 상대 크기를 비교할 수 없습니다. 포화된
+  // 사건을 특정 모서리로 강제 분류하면 FR/RR 등의 방향 편향처럼 보일 수
+  // 있으므로 충격은 유효하게 기록하되 위치 결과는 명시적으로 무효화합니다.
+  if (event.saturationMask != 0) {
+    event.zone = ImpactZone::UNKNOWN;
+    event.locationQuality = 0.0f;
+  }
+
   calculateInspectionLevel(event);
 
   if (!event.valid) {
@@ -2786,6 +2833,10 @@ void handleSerialCommands() {
         printStatus();
         break;
 
+      case 'd':
+        printRtcStatus();
+        break;
+
       case 'c':
         if (systemState != SystemState::CAPTURING) {
           if (!imuReady) {
@@ -2885,6 +2936,7 @@ void printHelp() {
   Serial.println("Serial commands");
   Serial.println("  h : help");
   Serial.println("  s : print status and current sensor values");
+  Serial.println("  d : read current RTC time or retry RTC connection");
   Serial.println("  c : recalibrate, then run PZT tap self-test");
   Serial.println("  v : repeat PZT tap self-test");
   Serial.println("  t : create a simulated INSPECT event");
