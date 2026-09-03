@@ -1,6 +1,6 @@
 # 실험·보정 데이터 관리
 
-이 폴더는 EV-BLACKBOX의 파일럿 및 본 실험 데이터를 재현 가능하게 관리하기 위한 공간입니다.
+이 폴더는 EV-BLACKBOX의 실험 데이터를 재현 가능하게 관리하기 위한 공간입니다. 최종 보고서의 75회 시험은 5개 위치, 3개 높이, 조건별 5회 반복으로 구성됩니다.
 
 ## 권장 구조
 
@@ -39,7 +39,7 @@ results/2026-08-25_pilot01_summary.csv
 | `drop_height_cm` | 낙하 높이(cm) |
 | `support_condition` | 고무발 위치·개수 등 |
 | `operator` | 실험자 |
-| `firmware_version` | `0.4.0` |
+| `firmware_version` | `0.4.1` |
 | `notes` | 재시도, 오작동, 환경 변화 등 |
 
 ## 재현성을 위해 함께 남길 것
